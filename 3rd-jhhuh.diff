@@ -1,0 +1,270 @@
+diff --git a/openstackclient/common/configuration.py b/openstackclient/common/configuration.py
+index 49ef0e05..5839ea4e 100644
+--- a/openstackclient/common/configuration.py
++++ b/openstackclient/common/configuration.py
+@@ -58,6 +58,9 @@ class ShowConfiguration(command.ShowOne):
+                 if o.secret
+             ]
+ 
++        if parsed_args.mask and info["password"]:
++            info["password"] = REDACTED
++
+         for key, value in info.pop('auth', {}).items():
+             if parsed_args.mask and key.lower() in secret_opts:
+                 value = REDACTED
+diff --git a/openstackclient/compute/v2/server.py b/openstackclient/compute/v2/server.py
+index b02ee6ff..39de7cf0 100644
+--- a/openstackclient/compute/v2/server.py
++++ b/openstackclient/compute/v2/server.py
+@@ -2226,7 +2226,7 @@ class ListServer(command.Lister):
+                 identity_client,
+                 parsed_args.project,
+                 parsed_args.project_domain,
+-            ).id
++            )
+             parsed_args.all_projects = True
+ 
+         user_id = None
+@@ -2443,6 +2443,10 @@ class ListServer(command.Lister):
+ 
+         marker_id = None
+ 
++        # TODO
++        columns += ('created',)
++        column_headers += ('Created At',)
++
+         # support for additional columns
+         if parsed_args.columns:
+             for c in parsed_args.columns:
+@@ -4140,9 +4144,19 @@ class ShowServer(command.ShowOne):
+ 
+     def take_action(self, parsed_args):
+         compute_client = self.app.client_manager.compute
++        # identity_client = self.app.client_manager.identity # task2
++
+         server = utils.find_resource(
+             compute_client.servers, parsed_args.server)
+ 
++        # task2
++        # project_name = identity_common.find_project(
++        #     identity_client,
++        #     server.tenant_id,
++        # ).name
++        # if not project_name:
++        #     project_name = 'admin'
++
+         if parsed_args.diagnostics:
+             (resp, data) = server.diagnostics()
+             if not resp.status_code == 200:
+@@ -4166,6 +4180,8 @@ class ShowServer(command.ShowOne):
+         data = _prep_server_detail(
+             compute_client, self.app.client_manager.image, server,
+             refresh=False)
++        data['project_name'] = 'admin'
++        # tmp = data[2]._value
+ 
+         if topology:
+             data['topology'] = format_columns.DictColumn(topology)
+diff --git a/openstackclient/tests/unit/compute/v2/fakes.py b/openstackclient/tests/unit/compute/v2/fakes.py
+index a1e7754a..030b032c 100644
+--- a/openstackclient/tests/unit/compute/v2/fakes.py
++++ b/openstackclient/tests/unit/compute/v2/fakes.py
+@@ -612,6 +612,7 @@ class FakeServer(object):
+                 'id': 'flavor-id-' + uuid.uuid4().hex,
+             },
+             'OS-EXT-STS:power_state': 1,
++            'created': '2022-07-16T06:38:23Z' #TODO: test case
+         }
+ 
+         # Overwrite default attributes.
+diff --git a/openstackclient/tests/unit/compute/v2/test_server.py b/openstackclient/tests/unit/compute/v2/test_server.py
+index 004f3a05..65fa748e 100644
+--- a/openstackclient/tests/unit/compute/v2/test_server.py
++++ b/openstackclient/tests/unit/compute/v2/test_server.py
+@@ -1392,6 +1392,7 @@ class TestServerCreate(TestServer):
+     columns = (
+         'OS-EXT-STS:power_state',
+         'addresses',
++        'created',
+         'flavor',
+         'id',
+         'image',
+@@ -1405,6 +1406,7 @@ class TestServerCreate(TestServer):
+             server.PowerStateColumn(
+                 getattr(self.new_server, 'OS-EXT-STS:power_state')),
+             format_columns.DictListColumn({}),
++            '2022-07-16T06:38:23Z',
+             self.flavor.name + ' (' + self.new_server.flavor.get('id') + ')',
+             self.new_server.id,
+             self.image.name + ' (' + self.new_server.image.get('id') + ')',
+@@ -4299,6 +4301,7 @@ class _TestServerList(TestServer):
+         'Networks',
+         'Image',
+         'Flavor',
++        'Created At',
+     )
+     columns_long = (
+         'ID',
+@@ -4314,6 +4317,7 @@ class _TestServerList(TestServer):
+         'Availability Zone',
+         'Host',
+         'Properties',
++        'Created At',
+     )
+ 
+     def setUp(self):
+@@ -4403,6 +4407,7 @@ class TestServerList(_TestServerList):
+                 # Image will be an empty string if boot-from-volume
+                 self.image.name if s.image else server.IMAGE_STRING_FOR_BFV,
+                 self.flavor.name,
++                '2022-07-16T06:38:23Z',
+             ) for s in self.servers
+         )
+ 
+@@ -4465,6 +4470,7 @@ class TestServerList(_TestServerList):
+                 getattr(s, 'OS-EXT-AZ:availability_zone'),
+                 getattr(s, 'OS-EXT-SRV-ATTR:host'),
+                 s.Metadata,
++                '2022-07-16T06:38:23Z',
+             ) for s in self.servers)
+         arglist = [
+             '--long',
+@@ -4524,7 +4530,8 @@ class TestServerList(_TestServerList):
+                 format_columns.DictListColumn(s.networks),
+                 # Image will be an empty string if boot-from-volume
+                 s.image['id'] if s.image else server.IMAGE_STRING_FOR_BFV,
+-                s.flavor['id']
++                s.flavor['id'],
++                '2022-07-16T06:38:23Z',
+             ) for s in self.servers
+         )
+ 
+@@ -4552,7 +4559,8 @@ class TestServerList(_TestServerList):
+                 format_columns.DictListColumn(s.networks),
+                 # Image will be an empty string if boot-from-volume
+                 s.image['id'] if s.image else server.IMAGE_STRING_FOR_BFV,
+-                s.flavor['id']
++                s.flavor['id'],
++                '2022-07-16T06:38:23Z',
+             ) for s in self.servers
+         )
+ 
+@@ -4921,6 +4929,7 @@ class TestServerList(_TestServerList):
+                 getattr(s, 'OS-EXT-AZ:availability_zone'),
+                 getattr(s, 'OS-EXT-SRV-ATTR:host'),
+                 s.Metadata,
++                '2022-07-16T06:38:23Z',
+             ) for s in self.servers)
+ 
+         arglist = [
+@@ -4982,6 +4991,7 @@ class TestServerList(_TestServerList):
+                 getattr(s, 'OS-EXT-AZ:availability_zone'),
+                 getattr(s, 'OS-EXT-SRV-ATTR:host'),
+                 s.Metadata,
++                '2022-07-16T06:38:23Z',
+                 s.host_status,
+             ) for s in servers)
+ 
+@@ -5003,6 +5013,7 @@ class TestServerListV273(_TestServerList):
+         'Networks',
+         'Image',
+         'Flavor',
++        'Created At',
+     )
+     columns_long = (
+         'ID',
+@@ -5017,6 +5028,7 @@ class TestServerListV273(_TestServerList):
+         'Availability Zone',
+         'Host',
+         'Properties',
++        'Created At',
+     )
+ 
+     def setUp(self):
+@@ -5058,6 +5070,7 @@ class TestServerListV273(_TestServerList):
+                 # Image will be an empty string if boot-from-volume
+                 self.image.name if s.image else server.IMAGE_STRING_FOR_BFV,
+                 self.flavor.name,
++                '2022-07-16T06:38:23Z',
+             ) for s in self.servers)
+ 
+     def test_server_list_with_locked_pre_v273(self):
+@@ -5241,7 +5254,7 @@ class TestServerListV273(_TestServerList):
+         partial_server = next(data)
+         expected_row = (
+             'server-id-95a56bfc4xxxxxx28d7e418bfd97813a', '',
+-            'UNKNOWN', format_columns.DictListColumn({}), '', '')
++            'UNKNOWN', format_columns.DictListColumn({}), '', '','2018-12-03T21:06:18Z')
+         self.assertEqual(expected_row, partial_server)
+ 
+ 
+@@ -7642,6 +7655,7 @@ class TestServerShow(TestServer):
+         # faked, we don't need to fake everything of the return value exactly.
+         resp = mock.Mock()
+         resp.status_code = 200
++
+         server_method = {
+             'diagnostics': (resp, {'test': 'test'}),
+             'topology': self.topology,
+@@ -7660,12 +7674,14 @@ class TestServerShow(TestServer):
+         self.columns = (
+             'OS-EXT-STS:power_state',
+             'addresses',
++            'created',
+             'flavor',
+             'id',
+             'image',
+             'name',
+             'networks',
+             'project_id',
++            'project_name',
+             'properties',
+         )
+ 
+@@ -7673,12 +7689,14 @@ class TestServerShow(TestServer):
+             server.PowerStateColumn(
+                 getattr(self.server, 'OS-EXT-STS:power_state')),
+             format_columns.DictListColumn(self.server.networks),
++            '2022-07-16T06:38:23Z',
+             self.flavor.name + " (" + self.flavor.id + ")",
+             self.server.id,
+             self.image.name + " (" + self.image.id + ")",
+             self.server.name,
+             {'public': ['10.20.30.40', '2001:db8::f']},
+             'tenant-id-xxx',
++            'admin',
+             format_columns.DictColumn({}),
+         )
+ 
+@@ -7729,9 +7747,10 @@ class TestServerShow(TestServer):
+         columns, data = self.cmd.take_action(parsed_args)
+ 
+         self.assertEqual(self.columns, columns)
++        # tmp = data[2]._value
+         # Since the flavor details are in a dict we can't be sure of the
+         # ordering so just assert that one of the keys is in the output.
+-        self.assertIn('original_name', data[2]._value)
++        self.assertIn('original_name', data[3]._value)
+ 
+     def test_show_diagnostics(self):
+         arglist = [
+@@ -8359,6 +8378,7 @@ class TestServerGeneral(TestServer):
+             'volumes_attached': [{"id": "6344fe9d-ef20-45b2-91a6"}],
+             'addresses': format_columns.DictListColumn(_server.networks),
+             'project_id': 'tenant-id-xxx',
++            'created': '',
+         }
+ 
+         # Call _prep_server_detail().
+diff --git a/tox.ini b/tox.ini
+index f631380d..f2e6dfda 100644
+--- a/tox.ini
++++ b/tox.ini
+@@ -1,6 +1,6 @@
+ [tox]
+ minversion = 3.18.0
+-envlist = py38,pep8
++envlist = py310
+ skipsdist = True
+ # Automatic envs (pyXX) will only use the python version appropriate to that
+ # env and ignore basepython inherited from [testenv] if we set

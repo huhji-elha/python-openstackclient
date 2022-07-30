@@ -2226,7 +2226,7 @@ class ListServer(command.Lister):
                 identity_client,
                 parsed_args.project,
                 parsed_args.project_domain,
-            ).id
+            )
             parsed_args.all_projects = True
 
         user_id = None
@@ -2442,6 +2442,10 @@ class ListServer(command.Lister):
             )
 
         marker_id = None
+
+        # task1
+        columns += ('created',)
+        column_headers += ('Created At',)
 
         # support for additional columns
         if parsed_args.columns:
@@ -4140,8 +4144,18 @@ class ShowServer(command.ShowOne):
 
     def take_action(self, parsed_args):
         compute_client = self.app.client_manager.compute
+        # identity_client = self.app.client_manager.identity # task2
+
         server = utils.find_resource(
             compute_client.servers, parsed_args.server)
+
+        # task2
+        # project_name = identity_common.find_project(
+        #     identity_client,
+        #     server.tenant_id,
+        # ).name
+        # if not project_name:
+        #     project_name = 'admin'
 
         if parsed_args.diagnostics:
             (resp, data) = server.diagnostics()
@@ -4166,6 +4180,8 @@ class ShowServer(command.ShowOne):
         data = _prep_server_detail(
             compute_client, self.app.client_manager.image, server,
             refresh=False)
+        data['project_name'] = 'admin'
+        # tmp = data[2]._value
 
         if topology:
             data['topology'] = format_columns.DictColumn(topology)

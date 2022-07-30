@@ -58,6 +58,9 @@ class ShowConfiguration(command.ShowOne):
                 if o.secret
             ]
 
+        # if parsed_args.mask and info["password"]:
+            # info["password"] = REDACTED
+
         for key, value in info.pop('auth', {}).items():
             if parsed_args.mask and key.lower() in secret_opts:
                 value = REDACTED

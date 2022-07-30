@@ -612,6 +612,7 @@ class FakeServer(object):
                 'id': 'flavor-id-' + uuid.uuid4().hex,
             },
             'OS-EXT-STS:power_state': 1,
+            'created': '2022-07-16T06:38:23Z' #TODO: test case
         }
 
         # Overwrite default attributes.
